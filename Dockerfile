@@ -1,4 +1,5 @@
-ARG NODE_IMAGE_VERSION="22.23.4-alpine"
+# codewire: pinned by digest (node:22.23.4-alpine, linux/amd64 and arm64 index).
+ARG NODE_IMAGE_VERSION="22.23.4-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202"
 ARG PNPM_VERSION="12.3.4"
 # Keep in sync with the prisma/@prisma/* versions in package.json
 ARG PRISMA_VERSION="7.10.0"
@@ -61,7 +62,9 @@ RUN adduser --system --uid 1001 nextjs
 # Bootstrap pnpm with the bundled npm, then remove npm in the same layer so the
 # vulnerable packages vendored inside the npm CLI are not shipped in the final
 # image. pnpm is the only package manager needed at build and runtime.
+# codewire: apk upgrade takes the base's fixed packages (zlib 1.4 and later).
 RUN set -x \
+    && apk upgrade --no-cache \
     && apk add --no-cache curl libc6-compat \
     && npm install -g pnpm@${PNPM_VERSION} \
     && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
@@ -86,6 +89,11 @@ RUN pnpm add npm-run-all dotenv chalk semver \
 # as the non-root user and fail with a permissions error.
 RUN ls node_modules/.pnpm/@prisma+engines@${PRISMA_VERSION}/node_modules/@prisma/engines/*engine* \
     || (echo "ERROR: Prisma engine binaries missing - @prisma/engines postinstall was blocked" && exit 1)
+
+# codewire: nothing at runtime calls pnpm (start-docker.sh runs node and
+# node_modules/.bin/prisma), so remove it like npm above; it vendors its own
+# undici, which the image scan flags.
+RUN rm -rf /usr/local/lib/node_modules/pnpm /usr/local/bin/pnpm /usr/local/bin/pnpx
 
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder /app/prisma ./prisma
